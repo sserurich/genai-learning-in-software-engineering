@@ -15,13 +15,14 @@ import pandas as pd
 
 from genai_mining.config import FINAL_COLUMNS
 from genai_mining.dataset import (
+    append_failures,
+    append_partial_rows,
     ensure_final_columns,
     export_annotation_candidates,
     group_info_for_repo,
     load_group_map,
     merge_manual_annotations,
     write_failures_csv,
-    write_partial_csv,
 )
 from genai_mining.features import extract_features_for_pr
 from genai_mining.github_client import GitHubClient, RawCache
@@ -60,6 +61,8 @@ def build_dataset(
 
     rows: List[Dict[str, Any]] = []
     all_failures: List[MiningFailure] = []
+    rows_checkpoint = 0
+    failures_checkpoint = 0
 
     partial_metrics_path = outdir / "automatic_metrics.partial.csv"
     partial_failures_path = outdir / "mining_failures.partial.csv"
@@ -102,9 +105,17 @@ def build_dataset(
                     traceback=traceback.format_exc(),
                 ))
 
-        # Persist progress after every repository.
-        write_partial_csv(rows, partial_metrics_path)
-        write_failures_csv(all_failures, partial_failures_path)
+        # Persist only the newly added records after every repository.
+        rows_checkpoint = append_partial_rows(
+            rows,
+            partial_metrics_path,
+            rows_checkpoint,
+        )
+        failures_checkpoint = append_failures(
+            all_failures,
+            partial_failures_path,
+            failures_checkpoint,
+        )
         print(
             f"[partial] {repo}: {len(rows)} rows, {len(all_failures)} failures so far."
         )

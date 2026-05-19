@@ -28,9 +28,10 @@ def _cached_or_fetch(
 ) -> List[Any]:
     """Fetch a paginated PR sub-resource, serving from cache when available."""
     cache_name = f"pr_{pr_number}_{name}"
-    cached = cache.read_json(repo, cache_name)
-    if cached is not None and use_cache:
-        return cached
+    if use_cache:
+        cached = cache.read_json(repo, cache_name)
+        if cached is not None:
+            return cached
     data = client.paginate(url, params=params)
     cache.write_json(repo, cache_name, data)
     return data
@@ -57,8 +58,12 @@ def mine_repository(
     owner_repo_url = f"{GITHUB_API}/repos/{repo}"
     failures: List[MiningFailure] = []
 
-    cached_prs = cache.read_json(repo, "pulls")
-    if cached_prs is not None and use_cache:
+    if use_cache:
+        cached_prs = cache.read_json(repo, "pulls")
+    else:
+        cached_prs = None
+
+    if cached_prs is not None:
         pulls = cached_prs
     else:
         pulls = client.paginate(f"{owner_repo_url}/pulls", params={"state": state})

@@ -155,6 +155,32 @@ def write_partial_csv(rows: List[Dict[str, Any]], path: Path) -> None:
     df[FINAL_COLUMNS].to_csv(path, index=False)
 
 
+def append_partial_rows(
+    rows: List[Dict[str, Any]],
+    path: Path,
+    start_index: int,
+) -> int:
+    """
+    Append only newly extracted rows to the partial metrics CSV.
+
+    Returns the next start index to use on subsequent calls.
+    """
+    if start_index >= len(rows):
+        return start_index
+
+    new_rows = rows[start_index:]
+    write_header = not path.exists() or path.stat().st_size == 0
+
+    with path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=FINAL_COLUMNS)
+        if write_header:
+            writer.writeheader()
+        for row in new_rows:
+            writer.writerow({col: row.get(col, "") for col in FINAL_COLUMNS})
+
+    return len(rows)
+
+
 def write_failures_csv(failures: List[MiningFailure], path: Path) -> None:
     """Write the failure log to a CSV file."""
     if not failures:
@@ -164,6 +190,32 @@ def write_failures_csv(failures: List[MiningFailure], path: Path) -> None:
         writer.writeheader()
         for failure in failures:
             writer.writerow(asdict(failure))
+
+
+def append_failures(
+    failures: List[MiningFailure],
+    path: Path,
+    start_index: int,
+) -> int:
+    """
+    Append only newly captured failures to the partial failure CSV.
+
+    Returns the next start index to use on subsequent calls.
+    """
+    if start_index >= len(failures):
+        return start_index
+
+    new_failures = failures[start_index:]
+    write_header = not path.exists() or path.stat().st_size == 0
+
+    with path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=FAILURE_COLUMNS)
+        if write_header:
+            writer.writeheader()
+        for failure in new_failures:
+            writer.writerow(asdict(failure))
+
+    return len(failures)
 
 
 def ensure_final_columns(df: pd.DataFrame) -> pd.DataFrame:

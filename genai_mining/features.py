@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from genai_mining.config import (
@@ -25,6 +26,36 @@ from genai_mining.config import (
     VERIFICATION_KEYWORDS,
 )
 from genai_mining.models import PullRequestRawBundle, RepoGroupInfo
+
+
+DISCLOSURE_SEED_REGEX = {
+    seed: re.compile(r"\b" + re.escape(seed) + r"\b", flags=re.IGNORECASE)
+    for seed in DISCLOSURE_SEEDS
+}
+DISCLOSURE_CONTEXT_REGEX = [
+    re.compile(pattern, flags=re.IGNORECASE) for pattern in DISCLOSURE_CONTEXT_PATTERNS
+]
+TEST_FILE_REGEX = [
+    re.compile(pattern, flags=re.IGNORECASE) for pattern in TEST_FILE_PATTERNS
+]
+ALTERNATIVES_REGEX = re.compile(
+    r"\b(alternative|alternatives|tradeoff|tradeoffs)\b",
+    flags=re.IGNORECASE,
+)
+
+JUSTIFICATION_KEYWORDS = tuple(
+    sorted({"because", "reason", "approach", "decided", "why"} & set(REASONING_KEYWORDS))
+)
+
+
+@lru_cache(maxsize=1024)
+def _word_boundary_pattern(keyword: str) -> re.Pattern[str]:
+    return re.compile(r"\b" + re.escape(keyword.lower()) + r"\b")
+
+
+@lru_cache(maxsize=1024)
+def _ignorecase_pattern(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern, flags=re.IGNORECASE)
 
 
 # =============================================================================
@@ -44,14 +75,12 @@ def count_keywords(text: str, keywords: Iterable[str]) -> int:
     count = 0
     lower = text.lower()
     for keyword in keywords:
-        pattern = r"\b" + re.escape(keyword.lower()) + r"\b"
-        count += len(re.findall(pattern, lower))
+        count += len(_word_boundary_pattern(keyword).findall(lower))
     return count
 
 
 def contains_any_pattern(value: str, patterns: Iterable[str]) -> bool:
-    lower = value.lower()
-    return any(re.search(p, lower, flags=re.IGNORECASE) for p in patterns)
+    return any(_ignorecase_pattern(pattern).search(value) for pattern in patterns)
 
 
 def split_repo_name(repo: str) -> str:
@@ -132,19 +161,18 @@ def detect_ai_disclosure(text_locations: Dict[str, str]) -> Tuple[str, int, str,
     context_pattern_matched = False
 
     for location, text in text_locations.items():
-        lower = text.lower()
         location_seed_count = 0
         location_pattern_matched = False
 
-        for seed in DISCLOSURE_SEEDS:
-            hits = len(re.findall(r"\b" + re.escape(seed) + r"\b", lower))
+        for seed, pattern in DISCLOSURE_SEED_REGEX.items():
+            hits = len(pattern.findall(text))
             if hits:
                 location_seed_count += hits
                 tool_label = "ChatGPT" if seed == "chatgpt" else seed.capitalize()
                 tools_seen.add(tool_label)
 
-        for pattern in DISCLOSURE_CONTEXT_PATTERNS:
-            if re.search(pattern, lower, flags=re.IGNORECASE):
+        for pattern in DISCLOSURE_CONTEXT_REGEX:
+            if pattern.search(text):
                 location_pattern_matched = True
                 break
 
@@ -168,10 +196,7 @@ def detect_ai_disclosure(text_locations: Dict[str, str]) -> Tuple[str, int, str,
 # =============================================================================
 
 def is_test_file(filename: str) -> bool:
-    return any(
-        re.search(pattern, filename, flags=re.IGNORECASE)
-        for pattern in TEST_FILE_PATTERNS
-    )
+    return any(pattern.search(filename) for pattern in TEST_FILE_REGEX)
 
 
 def extract_ci_status(check_runs: List[Dict[str, Any]]) -> Tuple[str, str]:
@@ -381,20 +406,15 @@ def extract_features_for_pr(
     )
 
     # Use REASONING_KEYWORDS as the single source of truth.
-    justification_keywords = {"because", "reason", "approach", "decided", "why"}
     justification_present = "Yes" if (
         reasoning_count >= 2
         or any(
-            re.search(r"\b" + re.escape(kw) + r"\b", pr_body, flags=re.IGNORECASE)
-            for kw in justification_keywords & set(REASONING_KEYWORDS)
+            _word_boundary_pattern(keyword).search(pr_body.lower())
+            for keyword in JUSTIFICATION_KEYWORDS
         )
     ) else "No"
 
-    alternatives_discussed = "Yes" if re.search(
-        r"\b(alternative|alternatives|tradeoff|tradeoffs)\b",
-        all_text,
-        flags=re.IGNORECASE,
-    ) else "No"
+    alternatives_discussed = "Yes" if ALTERNATIVES_REGEX.search(all_text) else "No"
 
     ai_suspected, suspicion_reason = conservative_ai_suspicion(
         ai_disclosed=ai_disclosed,
