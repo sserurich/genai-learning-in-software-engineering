@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +31,16 @@ from genai_mining.models import MiningFailure
 from genai_mining.token_pool import TokenPool
 
 
+def _parse_date_arg(label: str, value: Optional[str]) -> Optional[date]:
+    """Parse optional YYYY-MM-DD date CLI inputs."""
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid {label} '{value}'. Expected YYYY-MM-DD.") from exc
+
+
 def build_dataset(
     repos: List[str],
     semester: str,
@@ -38,6 +48,8 @@ def build_dataset(
     annotation_file: Optional[Path],
     outdir: Path,
     tokens_file: Optional[Path] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     use_cache: bool = True,
 ) -> None:
     """
@@ -53,6 +65,11 @@ def build_dataset(
     pool = TokenPool.from_env_and_file(tokens_file)
     print(f"[tokens] Using {len(pool)} token(s).")
 
+    start_bound = _parse_date_arg("--start-date", start_date)
+    end_bound = _parse_date_arg("--end-date", end_date)
+    if start_bound and end_bound and start_bound > end_bound:
+        raise ValueError("--start-date must be less than or equal to --end-date.")
+
     outdir.mkdir(parents=True, exist_ok=True)
     raw_cache = RawCache(outdir / "raw_data")
 
@@ -67,6 +84,14 @@ def build_dataset(
     partial_metrics_path = outdir / "automatic_metrics.partial.csv"
     partial_failures_path = outdir / "mining_failures.partial.csv"
 
+    if start_bound or end_bound:
+        print(
+            "[filter] PR created_at range: "
+            f"{start_bound.isoformat() if start_bound else 'MIN'}"
+            " to "
+            f"{end_bound.isoformat() if end_bound else 'MAX'}"
+        )
+
     for repo in repos:
         group_info = group_info_for_repo(repo, group_map)
         bundles, repo_failures = mine_repository(
@@ -75,6 +100,8 @@ def build_dataset(
             repo=repo,
             state="all",
             use_cache=use_cache,
+            start_date=start_bound,
+            end_date=end_bound,
         )
         all_failures.extend(repo_failures)
 

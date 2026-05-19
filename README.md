@@ -129,6 +129,24 @@ python3 mine_genai_repos.py \
   --outdir outputs
 ```
 
+To mine PRs created within a specific date range (inclusive):
+
+```bash
+python3 mine_genai_repos.py \
+  --repos NL-Eats-Community-Outreach-Inc/judge-portal \
+  --semester Spring2026 \
+  --group-map group_map.csv \
+  --tokens-file tokens.txt \
+  --start-date 2026-02-01 \
+  --end-date 2026-05-31 \
+  --outdir outputs
+```
+
+Date filter flags:
+
+- `--start-date YYYY-MM-DD` : include PRs with `created_at` on/after this date
+- `--end-date YYYY-MM-DD` : include PRs with `created_at` on/before this date
+
 To bypass the local JSON cache and re-fetch everything from GitHub:
 
 ```bash

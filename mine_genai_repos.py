@@ -76,6 +76,18 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--start-date",
+        default=None,
+        help="Optional inclusive start date for PR created_at filter (YYYY-MM-DD).",
+    )
+
+    parser.add_argument(
+        "--end-date",
+        default=None,
+        help="Optional inclusive end date for PR created_at filter (YYYY-MM-DD).",
+    )
+
+    parser.add_argument(
         "--no-cache",
         action="store_true",
         help="Ignore cached raw JSON and re-fetch from GitHub.",
@@ -94,5 +106,7 @@ if __name__ == "__main__":
         annotation_file=args.annotation_file,
         outdir=args.outdir,
         tokens_file=args.tokens_file,
+        start_date=args.start_date,
+        end_date=args.end_date,
         use_cache=not args.no_cache,
     )

@@ -9,7 +9,7 @@ from __future__ import annotations
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 import re
 import traceback
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from genai_mining.config import GITHUB_API, MINER_SUBRESOURCE_WORKERS
@@ -38,6 +38,36 @@ def _cached_or_fetch(
     return data
 
 
+def _parse_pr_created_date(pr: Dict[str, Any]) -> Optional[date]:
+    """Extract PR created_at as a date, if available and parseable."""
+    created_raw = pr.get("created_at")
+    if not created_raw:
+        return None
+    try:
+        return datetime.fromisoformat(created_raw.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def _within_date_bounds(
+    pr: Dict[str, Any],
+    start_date: Optional[date],
+    end_date: Optional[date],
+) -> bool:
+    if start_date is None and end_date is None:
+        return True
+
+    created = _parse_pr_created_date(pr)
+    if created is None:
+        return False
+
+    if start_date is not None and created < start_date:
+        return False
+    if end_date is not None and created > end_date:
+        return False
+    return True
+
+
 def mine_repository(
     client: GitHubClient,
     cache: RawCache,
@@ -45,6 +75,8 @@ def mine_repository(
     state: str = "all",
     use_cache: bool = True,
     subresource_workers: int = MINER_SUBRESOURCE_WORKERS,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
 ) -> Tuple[List[PullRequestRawBundle], List[MiningFailure]]:
     """
     Mine all PRs and related artifacts from a single repository.
@@ -70,6 +102,17 @@ def mine_repository(
     else:
         pulls = client.paginate(f"{owner_repo_url}/pulls", params={"state": state})
         cache.write_json(repo, "pulls", pulls)
+
+    if start_date is not None or end_date is not None:
+        original_count = len(pulls)
+        pulls = [
+            pr for pr in pulls
+            if _within_date_bounds(pr, start_date, end_date)
+        ]
+        print(
+            f"[filter] {repo}: kept {len(pulls)}/{original_count} PRs "
+            "after created_at date filtering"
+        )
 
     bundles: List[PullRequestRawBundle] = []
     worker_count = max(1, subresource_workers)
