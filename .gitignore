@@ -224,6 +224,10 @@ raw_data/
 mining_failures.csv
 manual_annotations.csv
 
+
 # Local secret / platform files
 tokens.txt
 .DS_Store
+
+#input files
+*.csv
