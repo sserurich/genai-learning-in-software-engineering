@@ -6,12 +6,13 @@ so that a single bad PR never aborts the entire run.
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 import re
 import traceback
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from genai_mining.config import GITHUB_API
+from genai_mining.config import GITHUB_API, MINER_SUBRESOURCE_WORKERS
 from genai_mining.github_client import GitHubClient, RawCache
 from genai_mining.models import MiningFailure, PullRequestRawBundle
 
@@ -43,6 +44,7 @@ def mine_repository(
     repo: str,
     state: str = "all",
     use_cache: bool = True,
+    subresource_workers: int = MINER_SUBRESOURCE_WORKERS,
 ) -> Tuple[List[PullRequestRawBundle], List[MiningFailure]]:
     """
     Mine all PRs and related artifacts from a single repository.
@@ -70,6 +72,7 @@ def mine_repository(
         cache.write_json(repo, "pulls", pulls)
 
     bundles: List[PullRequestRawBundle] = []
+    worker_count = max(1, subresource_workers)
 
     for pr in pulls:
         number = pr["number"]
@@ -98,75 +101,51 @@ def mine_repository(
                 traceback=traceback.format_exc(),
             ))
 
-        try:
-            commits = _fetch("commits", f"{owner_repo_url}/pulls/{number}/commits")
-        except Exception as exc:
-            _log_failure("fetch_commits", f"{owner_repo_url}/pulls/{number}/commits", exc)
-            commits = []
+        resources: Dict[str, List[Any]] = {
+            "commits": [],
+            "files": [],
+            "issue_comments": [],
+            "review_comments": [],
+            "reviews": [],
+            "check_runs": [],
+        }
 
-        try:
-            files = _fetch("files", f"{owner_repo_url}/pulls/{number}/files")
-        except Exception as exc:
-            _log_failure("fetch_files", f"{owner_repo_url}/pulls/{number}/files", exc)
-            files = []
-
-        try:
-            issue_comments = _fetch(
-                "issue_comments", f"{owner_repo_url}/issues/{number}/comments"
-            )
-        except Exception as exc:
-            _log_failure(
-                "fetch_issue_comments",
-                f"{owner_repo_url}/issues/{number}/comments",
-                exc,
-            )
-            issue_comments = []
-
-        try:
-            review_comments = _fetch(
-                "review_comments", f"{owner_repo_url}/pulls/{number}/comments"
-            )
-        except Exception as exc:
-            _log_failure(
-                "fetch_review_comments",
-                f"{owner_repo_url}/pulls/{number}/comments",
-                exc,
-            )
-            review_comments = []
-
-        try:
-            reviews = _fetch("reviews", f"{owner_repo_url}/pulls/{number}/reviews")
-        except Exception as exc:
-            _log_failure(
-                "fetch_reviews", f"{owner_repo_url}/pulls/{number}/reviews", exc
-            )
-            reviews = []
+        fetch_specs: List[Tuple[str, str, str]] = [
+            ("fetch_commits", "commits", f"{owner_repo_url}/pulls/{number}/commits"),
+            ("fetch_files", "files", f"{owner_repo_url}/pulls/{number}/files"),
+            ("fetch_issue_comments", "issue_comments", f"{owner_repo_url}/issues/{number}/comments"),
+            ("fetch_review_comments", "review_comments", f"{owner_repo_url}/pulls/{number}/comments"),
+            ("fetch_reviews", "reviews", f"{owner_repo_url}/pulls/{number}/reviews"),
+        ]
 
         head_sha = pr.get("head", {}).get("sha")
         if head_sha:
-            try:
-                check_runs = _fetch(
-                    "check_runs",
-                    f"{owner_repo_url}/commits/{head_sha}/check-runs",
-                )
-            except Exception as exc:
-                _log_failure(
-                    "fetch_check_runs",
-                    f"{owner_repo_url}/commits/{head_sha}/check-runs",
-                    exc,
-                )
-                check_runs = []
-        else:
-            check_runs = []
+            fetch_specs.append(
+                ("fetch_check_runs", "check_runs", f"{owner_repo_url}/commits/{head_sha}/check-runs")
+            )
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_map: Dict[Future[List[Any]], Tuple[str, str, str]] = {}
+            for stage, name, url in fetch_specs:
+                future = executor.submit(_fetch, name, url)
+                future_map[future] = (stage, name, url)
+
+            for future in as_completed(future_map):
+                stage, name, url = future_map[future]
+                try:
+                    resources[name] = future.result()
+                except Exception as exc:
+                    _log_failure(stage, url, exc)
+                    resources[name] = []
 
         bundles.append(PullRequestRawBundle(
             pr=pr,
-            commits=commits,
-            files=files,
-            issue_comments=issue_comments,
-            review_comments=review_comments,
-            reviews=reviews,
-            check_runs=check_runs,
+            commits=resources["commits"],
+            files=resources["files"],
+            issue_comments=resources["issue_comments"],
+            review_comments=resources["review_comments"],
+            reviews=resources["reviews"],
+            check_runs=resources["check_runs"],
         ))
 
     return bundles, failures

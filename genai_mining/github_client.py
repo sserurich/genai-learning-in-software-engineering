@@ -10,6 +10,7 @@ RawCache      — Stores paginated API responses as JSON files for
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -37,16 +38,66 @@ class GitHubClient:
         self._pool = pool
         self.sleep_seconds = sleep_seconds
         self.session = requests.Session()
+        self._token_lock = threading.Lock()
+        self._pace_lock = threading.Lock()
+        self._next_allowed_time = 0.0
+        self._current_token = ""
         self._rotate_token()
 
     def _rotate_token(self) -> None:
-        """Switch the session Authorization header to the next token."""
-        self.session.headers.update({
-            "Authorization": f"Bearer {self._pool.next()}",
+        """Switch the current Authorization token to the next token."""
+        with self._token_lock:
+            self._current_token = self._pool.next()
+
+    def _request_headers(self) -> Dict[str, str]:
+        """Build per-request headers from the current token snapshot."""
+        with self._token_lock:
+            token = self._current_token
+        return {
+            "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
             "User-Agent": "genai-repository-mining-pipeline",
-        })
+        }
+
+    def _apply_adaptive_pacing(self, headers: Dict[str, str]) -> None:
+        """
+        Sleep adaptively using rate-limit headers and a shared pacing gate.
+
+        The client spaces requests across threads so request volume tracks the
+        remaining budget until reset while preserving a small floor delay.
+        """
+        now = time.time()
+        adaptive_gap = self.sleep_seconds
+
+        remaining_raw = headers.get("X-RateLimit-Remaining")
+        reset_raw = headers.get("X-RateLimit-Reset")
+
+        try:
+            remaining = int(remaining_raw) if remaining_raw is not None else None
+        except (TypeError, ValueError):
+            remaining = None
+
+        try:
+            reset = int(reset_raw) if reset_raw is not None else None
+        except (TypeError, ValueError):
+            reset = None
+
+        if reset is not None and reset > now:
+            if remaining is not None and remaining <= 0:
+                adaptive_gap = max(self.sleep_seconds, (reset - now) + 1)
+            elif remaining is not None and remaining > 0:
+                window = reset - now
+                adaptive_gap = max(self.sleep_seconds, window / max(1, remaining))
+
+        # Keep adaptive spacing bounded so progress continues even with sparse headers.
+        adaptive_gap = min(adaptive_gap, 2.0)
+
+        with self._pace_lock:
+            wait_for = max(0.0, self._next_allowed_time - time.time())
+            if wait_for > 0:
+                time.sleep(wait_for)
+            self._next_allowed_time = time.time() + adaptive_gap
 
     def get(self, url: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """
@@ -54,7 +105,11 @@ class GitHubClient:
         """
         attempt = 0
         while True:
-            response = self.session.get(url, params=params)
+            response = self.session.get(
+                url,
+                params=params,
+                headers=self._request_headers(),
+            )
 
             if response.status_code == 403 and "rate limit" in response.text.lower():
                 reset = response.headers.get("X-RateLimit-Reset")
@@ -85,7 +140,7 @@ class GitHubClient:
                     f"GitHub API error {response.status_code}: {response.text[:500]}"
                 )
 
-            time.sleep(self.sleep_seconds)
+            self._apply_adaptive_pacing(response.headers)
             return response.json()
 
     def paginate(self, url: str, params: Optional[Dict[str, Any]] = None) -> List[Any]:

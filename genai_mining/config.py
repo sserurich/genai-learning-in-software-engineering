@@ -9,6 +9,7 @@ deliberately and document the rationale in the research notes.
 from __future__ import annotations
 
 GITHUB_API = "https://api.github.com"
+MINER_SUBRESOURCE_WORKERS = 4
 
 # ---------------------------------------------------------------------------
 # GenAI disclosure detection
