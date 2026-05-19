@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project-specific generated data
+outputs/
+raw_data/
+*.partial.csv
+mining_failures.csv
+manual_annotations.csv
+
+# Local secret / platform files
+tokens.txt
+.DS_Store
