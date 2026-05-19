@@ -14,7 +14,7 @@ Usage
         --tokens-file tokens.txt \\
         --outdir outputs
 
-See README_genai_repository_mining.md for full documentation.
+See README.md for full documentation.
 """
 
 from __future__ import annotations
