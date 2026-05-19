@@ -1,6 +1,6 @@
 # Robust GenAI Repository Mining Pipeline
 
-This pipeline supports the **GLSE** (GenAI Learning in Software Engineering) study, mining GitHub PR workflows to produce a PR-level dataset for analyzing GenAI usage in student projects (UNLV CS 472/672).
+This pipeline supports the **GLSE** (GenAI Learning in Software Engineering) study, mining GitHub PR workflows to produce a PR-level dataset for analyzing GenAI usage in student projects (CS 472/672).
 
 ## Create virtual environment and install dependencies
 
