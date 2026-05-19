@@ -38,6 +38,57 @@ def _cached_or_fetch(
     return data
 
 
+def _cached_or_fetch_check_runs(
+    cache: RawCache,
+    client: GitHubClient,
+    repo: str,
+    pr_number: int,
+    url: str,
+    use_cache: bool = True,
+) -> List[Any]:
+    """
+    Fetch commit check-runs with explicit pagination.
+
+    GitHub's check-runs endpoint returns a dict payload:
+    {"total_count": N, "check_runs": [...]} rather than a bare list.
+    """
+    cache_name = f"pr_{pr_number}_check_runs"
+    if use_cache:
+        cached = cache.read_json(repo, cache_name)
+        if isinstance(cached, list):
+            return cached
+        if isinstance(cached, dict):
+            # Backward compatibility if an older run cached dict payloads.
+            return list(cached.get("check_runs", []))
+
+    results: List[Any] = []
+    page = 1
+    per_page = 100
+    while True:
+        payload = client.get(url, params={"page": page, "per_page": per_page})
+        if not isinstance(payload, dict):
+            raise RuntimeError(
+                f"Expected dict response from {url}, got {type(payload)}"
+            )
+
+        items = payload.get("check_runs", [])
+        if not isinstance(items, list):
+            raise RuntimeError(
+                f"Expected 'check_runs' list in response from {url}, got {type(items)}"
+            )
+
+        if not items:
+            break
+
+        results.extend(items)
+        if len(items) < per_page:
+            break
+        page += 1
+
+    cache.write_json(repo, cache_name, results)
+    return results
+
+
 def _parse_pr_created_date(pr: Dict[str, Any]) -> Optional[date]:
     """Extract PR created_at as a date, if available and parseable."""
     created_raw = pr.get("created_at")
@@ -122,6 +173,15 @@ def mine_repository(
         print(f"[mine] {repo} PR #{number}")
 
         def _fetch(name: str, url: str, params: Optional[Dict[str, Any]] = None) -> List[Any]:
+            if name == "check_runs":
+                return _cached_or_fetch_check_runs(
+                    cache=cache,
+                    client=client,
+                    repo=repo,
+                    pr_number=number,
+                    url=url,
+                    use_cache=use_cache,
+                )
             return _cached_or_fetch(
                 cache, client, repo, number, name, url, params, use_cache
             )
