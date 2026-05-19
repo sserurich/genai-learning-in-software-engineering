@@ -210,8 +210,16 @@ Fill the following columns using the controlled vocabularies below:
 | `genai_usage_type` | `Code Generation`, `Debugging`, `Documentation`, `Testing`, `Refactoring`, `Design/Architecture`, `Other`, `` (leave blank if unknown) |
 | `usage_evidence` | Free text — quote or paraphrase the disclosure evidence |
 | `integration_style` | `Wholesale` (AI output pasted with no changes), `Partial` (AI output edited/merged), `Prompted` (developer used AI interactively), `Unknown` |
-| `patchtrack_category` | `AI-Assisted`, `Human-Only`, `Uncertain` |
-| `patchtrack_evidence` | Free text — brief justification for the patchtrack classification |
+| `patchtrack_category` | `PA`, `PN`, `NE`, `CL`, `Unclear` |
+| `patchtrack_evidence` | Free text — short explanation of observed behavior |
+
+PatchTrack category definitions:
+
+1. `PA` (Patch Applied): GenAI-assisted code appears integrated into the final solution directly or with minor adaptation.
+2. `PN` (Patch Not Applied): GenAI suggestions appear considered, but final implementation differs significantly or was independently reworked.
+3. `NE` (No Patch Generated): GenAI was used conceptually (reasoning, debugging strategy, explanation, design guidance) without direct code integration.
+4. `CL` (Closed): PR was closed without merging, potentially due to misalignment, quality concerns, or rejected approaches.
+5. `Unclear`: Insufficient evidence to determine interaction pattern.
 
 Save as `manual_annotations.csv` (keep `repo_name` and `pr_number` columns as keys), then rerun:
 

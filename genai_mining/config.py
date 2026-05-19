@@ -164,6 +164,18 @@ FAILURE_COLUMNS = [
 ]
 
 # ---------------------------------------------------------------------------
+# PatchTrack annotation categories
+# ---------------------------------------------------------------------------
+
+PATCHTRACK_CATEGORIES = [
+    "PA",       # Patch Applied
+    "PN",       # Patch Not Applied
+    "NE",       # No Patch Generated
+    "CL",       # Closed
+    "Unclear",  # Insufficient evidence
+]
+
+# ---------------------------------------------------------------------------
 # Suspicion heuristic thresholds
 # ---------------------------------------------------------------------------
 

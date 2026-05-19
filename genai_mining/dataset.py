@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from genai_mining.config import FAILURE_COLUMNS, FINAL_COLUMNS
+from genai_mining.config import FAILURE_COLUMNS, FINAL_COLUMNS, PATCHTRACK_CATEGORIES
 from genai_mining.features import split_repo_name
 from genai_mining.models import MiningFailure, RepoGroupInfo
 
@@ -109,6 +109,16 @@ def merge_manual_annotations(
         return automatic_df
 
     annotations = pd.read_csv(annotation_file)
+
+    if "patchtrack_category" in annotations.columns:
+        normalized = annotations["patchtrack_category"].fillna("").astype(str).str.strip()
+        allowed = set(PATCHTRACK_CATEGORIES)
+        invalid = sorted({value for value in normalized if value and value not in allowed})
+        if invalid:
+            raise ValueError(
+                "annotation file contains invalid patchtrack_category values: "
+                f"{invalid}. Allowed values are {PATCHTRACK_CATEGORIES} (or blank)."
+            )
 
     key_cols = ["repo_name", "pr_number"]
     for col in key_cols:
