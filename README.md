@@ -2,16 +2,41 @@
 
 This pipeline supports the **GLSE** (GenAI Learning in Software Engineering) study, mining GitHub PR workflows to produce a PR-level dataset for analyzing GenAI usage in student projects (UNLV CS 472/672).
 
-## Install dependencies
+## Create virtual environment and install dependencies
+
+Create a virtual environment first, then install dependencies.
+
+### macOS and Linux
 
 ```bash
-pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-Or manually:
+### Windows (PowerShell)
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+### Windows (Command Prompt)
+
+```bat
+py -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+If you prefer manual package install instead of requirements file:
 
 ```bash
-pip install pandas requests
+python -m pip install pandas requests
 ```
 
 ## Architecture
